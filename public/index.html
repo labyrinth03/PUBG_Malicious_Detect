@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PUBG 아군에게 입힌 데미지 조회</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="search-panel">
+        <div>
+          <p class="eyebrow">PUBG: BATTLEGROUNDS</p>
+          <h1>아군에게 입힌 데미지 조회</h1>
+        </div>
+        <form id="searchForm" class="search-form">
+          <label for="playerName">플레이어 닉네임</label>
+          <div class="search-row">
+            <input id="playerName" name="playerName" type="text" placeholder="예: PLAYERUNKNOWN, 대소문자 구별해서 입력해주세요" autocomplete="off" required />
+            <button type="submit">조회</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="status" class="status" hidden></section>
+      <section id="intro" class="intro-panel">
+        <h2>분석 방식</h2>
+        <p>
+          PUBG API에서 플레이어의 조회 가능한 최근 매치 ID를 가져온 뒤, 각 매치의 telemetry 로그를 확인합니다.
+          단순히 공식 총 데미지와 공격수단 합계를 비교하지 않고, 실제 피해자가 같은 팀원인지 직접 확인해서 아군 피해량을 계산합니다.
+        </p>
+        <div class="intro-grid">
+          <div>
+            <strong>아군 피해</strong>
+            <span>공격자가 검색 플레이어이고 피해자가 같은 팀에 있는 팀원인 데미지입니다.</span>
+          </div>
+          <div>
+            <strong>본인 피해</strong>
+            <span>공격자와 피해자가 모두 검색 플레이어로 기록된 데미지입니다.</span>
+          </div>
+          <div>
+            <strong>전체 공격수단</strong>
+            <span>검색 플레이어가 attacker로 기록된 모든 피해 이벤트를 공격수단별로 합산합니다.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="resultsView" class="results-view" hidden>
+        <section id="summary" class="summary"></section>
+        <section id="results" class="results"></section>
+        <nav id="pagination" class="pagination" aria-label="결과 페이지"></nav>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

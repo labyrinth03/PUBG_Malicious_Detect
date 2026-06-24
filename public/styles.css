@@ -9,10 +9,16 @@
   --accent-dark: #115e59;
   --danger: #b42318;
   --soft-danger: #fff1f0;
+  --success: #047857;
+  --soft-success: #ecfdf3;
 }
 
 * {
   box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -69,6 +75,26 @@ h1 {
   gap: 10px;
 }
 
+.sniper-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.sniper-result-fields {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.sniper-fields label {
+  margin-bottom: 0;
+}
+
+.sniper-fields input {
+  margin-top: 8px;
+  width: 100%;
+}
+
 input,
 button {
   height: 44px;
@@ -102,6 +128,16 @@ button:hover {
   background: var(--accent-dark);
 }
 
+.secondary-button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.secondary-button:hover {
+  background: #eef6f5;
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -127,6 +163,101 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.sniper-results {
+  margin-top: 18px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.result-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 24px 28px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.result-search-panel {
+  margin-top: 18px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.result-search-panel .search-form {
+  max-width: 620px;
+}
+
+.sniper-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sniper-summary div {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.sniper-summary strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 24px;
+}
+
+.sniper-summary small {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sniper-summary span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sniper-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sniper-match {
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.sniper-match strong,
+.sniper-match span {
+  display: block;
+}
+
+.sniper-match span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.sniper-match code {
+  color: var(--muted);
+  text-align: right;
+  word-break: break-all;
 }
 
 .summary strong {
@@ -238,6 +369,16 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.preview-badges {
+  display: grid;
+  gap: 8px;
+}
+
+.received-damage-badge {
+  background: var(--soft-success);
+  color: var(--success);
+}
+
 .match-preview-stats {
   display: grid;
   grid-template-columns: 360px 260px;
@@ -331,7 +472,7 @@ button:disabled {
 
 .team-damage-grid {
   display: grid;
-  grid-template-columns: 110px minmax(140px, 1fr) minmax(140px, 1fr) 100px;
+  grid-template-columns: 118px minmax(140px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) 100px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -357,6 +498,15 @@ button:disabled {
 
 .team-damage-row strong {
   text-align: right;
+}
+
+.team-damage-row span:first-child {
+  white-space: nowrap;
+}
+
+.timeline-attacker {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .team-damage-row:last-child span,
@@ -424,6 +574,17 @@ button:disabled {
 
   .search-row {
     grid-template-columns: 1fr;
+  }
+
+  .sniper-fields,
+  .sniper-summary,
+  .sniper-match,
+  .result-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .sniper-match code {
+    text-align: left;
   }
 
   .detail-list div {

@@ -13,8 +13,24 @@ dotenv.config();
 const PUBG_API_KEY = process.env.PUBG_API_KEY;
 const PORT = process.env.PORT || 3000;
 const app = express();
+const MAX_MATCH_CACHE_ENTRIES = 1000;
+const MAX_TELEMETRY_CACHE_ENTRIES = 40;
+const MAX_ANALYSIS_CACHE_ENTRIES = 3000;
+const matchCache = new Map();
+const telemetryCache = new Map();
+const analysisCache = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
+
+function cachePromise(cache, key, promise, maxEntries) {
+  if (cache.size >= maxEntries && !cache.has(key)) {
+    cache.delete(cache.keys().next().value);
+  }
+
+  cache.set(key, promise);
+  promise.catch(() => cache.delete(key));
+  return promise;
+}
 
 function modeText(matchType) {
   if (matchType === "custom") return "커스텀";
@@ -32,10 +48,64 @@ function teamText(teamSize) {
   return "스쿼드";
 }
 
+function gameModeText(gameMode) {
+  if (!gameMode) return "알 수 없음";
+  if (gameMode.includes("solo")) return "솔로";
+  if (gameMode.includes("duo")) return "듀오";
+  if (gameMode.includes("squad")) return "스쿼드";
+  return gameMode;
+}
+
 function elapsedSecondsFromMatchStart(matchCreatedAt, eventTime) {
   const elapsedMs = new Date(eventTime) - new Date(matchCreatedAt);
   if (!Number.isFinite(elapsedMs)) return 0;
   return Math.max(0, Math.floor(elapsedMs / 1000));
+}
+
+function formatMatchDate(dateValue) {
+  if (!dateValue) return "날짜 없음";
+  return new Date(dateValue).toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+}
+
+async function getMatchDateRange(matchIds) {
+  if (matchIds.length === 0) {
+    return { oldestDate: null, newestDate: null, label: "날짜 없음" };
+  }
+
+  const newestMatchId = matchIds[0];
+  const oldestMatchId = matchIds[matchIds.length - 1];
+  const [newestMatch, oldestMatch] = await Promise.all([
+    fetchMatch(newestMatchId),
+    newestMatchId === oldestMatchId ? null : fetchMatch(oldestMatchId),
+  ]);
+
+  const newestDate = newestMatch?.data?.attributes?.createdAt || null;
+  const oldestDate = oldestMatch?.data?.attributes?.createdAt || newestDate;
+
+  return {
+    oldestDate,
+    newestDate,
+    label: `${formatMatchDate(oldestDate)} - ${formatMatchDate(newestDate)}`,
+  };
+}
+
+function findParticipantByPlayerId(matchData, playerId) {
+  return matchData.included
+    ?.filter((item) => item.type === "participant")
+    .find((participant) => participant.attributes?.stats?.playerId === playerId);
+}
+
+function findRosterByParticipantId(matchData, participantId) {
+  return matchData.included?.find(
+    (item) =>
+      item.type === "roster" &&
+      item.relationships?.participants?.data?.some((participant) => participant.id === participantId)
+  );
 }
 
 async function pubgFetch(url) {
@@ -60,15 +130,28 @@ async function fetchPlayer(playerName) {
 }
 
 async function fetchMatch(matchId) {
-  return pubgFetch(`https://api.pubg.com/shards/steam/matches/${matchId}`);
+  if (matchCache.has(matchId)) return matchCache.get(matchId);
+
+  return cachePromise(
+    matchCache,
+    matchId,
+    pubgFetch(`https://api.pubg.com/shards/steam/matches/${matchId}`),
+    MAX_MATCH_CACHE_ENTRIES
+  );
 }
 
 async function fetchTelemetry(telemetryURL) {
-  const response = await fetch(telemetryURL);
-  if (!response.ok) {
-    throw new Error(`Telemetry error ${response.status}: ${response.statusText}`);
-  }
-  return response.json();
+  if (telemetryCache.has(telemetryURL)) return telemetryCache.get(telemetryURL);
+
+  const telemetryPromise = (async () => {
+    const response = await fetch(telemetryURL);
+    if (!response.ok) {
+      throw new Error(`Telemetry error ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  })();
+
+  return cachePromise(telemetryCache, telemetryURL, telemetryPromise, MAX_TELEMETRY_CACHE_ENTRIES);
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -94,6 +177,18 @@ async function mapWithConcurrency(items, limit, mapper) {
 }
 
 async function analyzeMatch(matchId, playerId, playerName) {
+  const cacheKey = `${playerId}:${matchId}`;
+  if (analysisCache.has(cacheKey)) return analysisCache.get(cacheKey);
+
+  return cachePromise(
+    analysisCache,
+    cacheKey,
+    analyzeMatchUncached(matchId, playerId, playerName),
+    MAX_ANALYSIS_CACHE_ENTRIES
+  );
+}
+
+async function analyzeMatchUncached(matchId, playerId, playerName) {
   const matchData = await fetchMatch(matchId);
   if (!matchData?.data || !matchData?.included) return null;
 
@@ -189,6 +284,7 @@ async function analyzeMatch(matchId, playerId, playerName) {
 
   return {
     matchId,
+    playerName,
     playedAt: new Date(matchCreatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
     mapName: MAP_NAMES[matchData.data.attributes.mapName] || matchData.data.attributes.mapName || "알 수 없음",
     matchType: modeText(matchData.data.attributes.matchType),
@@ -248,6 +344,79 @@ app.get("/api/teamkills/:playerName", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "조회 중 오류가 발생했습니다. API 제한 또는 일시적인 네트워크 문제일 수 있습니다." });
+  }
+});
+
+app.get("/api/sniper-check", async (req, res) => {
+  if (!PUBG_API_KEY) {
+    return res.status(500).json({ error: "PUBG_API_KEY가 설정되지 않았습니다." });
+  }
+
+  const playerName = String(req.query.playerName || "").trim();
+  const suspectName = String(req.query.suspectName || "").trim();
+
+  if (!playerName || !suspectName) {
+    return res.status(400).json({ error: "본인 닉네임과 저격 의심 닉네임을 모두 입력해주세요." });
+  }
+
+  try {
+    const [player, suspect] = await Promise.all([
+      fetchPlayer(playerName),
+      fetchPlayer(suspectName),
+    ]);
+
+    if (!player) {
+      return res.status(404).json({ error: `${playerName} 플레이어를 찾을 수 없습니다.` });
+    }
+
+    if (!suspect) {
+      return res.status(404).json({ error: `${suspectName} 플레이어를 찾을 수 없습니다.` });
+    }
+
+    const playerMatchIds = player.relationships?.matches?.data?.map((match) => match.id) || [];
+    const suspectMatchIds = suspect.relationships?.matches?.data?.map((match) => match.id) || [];
+    const suspectMatchIdSet = new Set(suspectMatchIds);
+    const commonMatchIds = playerMatchIds.filter((matchId) => suspectMatchIdSet.has(matchId));
+    const [playerMatchRange, suspectMatchRange] = await Promise.all([
+      getMatchDateRange(playerMatchIds),
+      getMatchDateRange(suspectMatchIds),
+    ]);
+
+    const commonMatches = (await mapWithConcurrency(commonMatchIds, 6, async (matchId) => {
+      const matchData = await fetchMatch(matchId);
+      if (!matchData?.data?.attributes || !matchData?.included) return null;
+
+      const playerParticipant = findParticipantByPlayerId(matchData, player.id);
+      const suspectParticipant = findParticipantByPlayerId(matchData, suspect.id);
+      if (!playerParticipant || !suspectParticipant) return null;
+
+      const playerRoster = findRosterByParticipantId(matchData, playerParticipant.id);
+      const suspectRoster = findRosterByParticipantId(matchData, suspectParticipant.id);
+      if (playerRoster?.id && playerRoster.id === suspectRoster?.id) return null;
+
+      const attributes = matchData.data.attributes;
+      return {
+        matchId,
+        playedAt: new Date(attributes.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+        mapName: MAP_NAMES[attributes.mapName] || attributes.mapName || "알 수 없음",
+        matchType: modeText(attributes.matchType),
+        gameMode: gameModeText(attributes.gameMode),
+      };
+    })).filter(Boolean);
+
+    res.json({
+      playerName: player.attributes.name,
+      suspectName: suspect.attributes.name,
+      playerScannedMatches: playerMatchIds.length,
+      suspectScannedMatches: suspectMatchIds.length,
+      playerMatchRange,
+      suspectMatchRange,
+      commonMatchCount: commonMatches.length,
+      matches: commonMatches,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "저격 의심 조회 중 오류가 발생했습니다. API 제한 또는 일시적인 네트워크 문제일 수 있습니다." });
   }
 });
 
